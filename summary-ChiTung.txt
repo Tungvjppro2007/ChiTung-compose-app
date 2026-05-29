@@ -1,0 +1,36 @@
+Họ tên: Nguyễn Chí Tùng
+Hostname server: cs-linux-20260504052434314
+Tên source code: Fastshop
+Công nghệ của source: Spring Boot (Java), Microsoft SQL Server (MSSQL)
+Tên image đã build:
+- chitung-compose-app-web-app
+- fast
+Tên service trong docker-compose: mysql_db, web-app
+Port host: 1434 (cho database), 8080 (cho web-app)
+Port container: 1433 (cho mssql), 8080 (cho web-app)
+1. Em đã dùng Dockerfile như thế nào?
+- Tạo một Dockerfile đặt tại thư mục gốc của source code Java để đóng gói ứng dụng Spring Boot.
+- Sử dụng cơ chế Multi-stage build:
+  + Stage 1 (Build): Sử dụng base image Maven/JDK để chạy lệnh đóng gói ứng dụng thành file .jar (mvn clean package).
+  + Stage 2 (Run): Sử dụng base image OpenJDK/Eclipse Temurin tinh gọn, copy file .jar từ stage 1 sang, cấu hình múi giờ (TZ=Asia/Ho_Chi_Minh), mở cổng EXPOSE 8080 và dùng lệnh ENTRYPOINT ["java", "-jar", "app.jar"] để khởi chạy ứng dụng khi container lên.
+2. Em đã dùng Docker Compose như thế nào?
+- Viết file docker-compose.yml để định nghĩa và quản lý đồng thời 2 dịch vụ (Services): 'mysql_db' (chạy SQL Server 2022) và 'web-app' (chạy ứng dụng Spring Boot).
+- Thiết lập phân vùng lưu trữ dữ liệu (Volumes) 'mssql_data' gắn vào thư mục '/var/opt/mssql' của container DB để đảm bảo dữ liệu không bị mất khi container bị xóa.
+- Sử dụng mạng độc lập (Networks) 'backend-net' để các container có thể giao tiếp an toàn với nhau bằng tên service.
+- Cấu hình các biến môi trường (Environment) để truyền thông tin kết nối DB (URL, Username, Password) động vào Spring Boot mà không cần sửa code cứng.
+- Sử dụng thuộc tính 'depends_on' để chỉ định thứ tự khởi động: web-app sẽ đợi container mysql_db lên trước mới khởi chạy.
+3. Nếu hệ thống chưa chạy được ngay từ đầu, lỗi nằm ở đâu?
+- Lỗi nằm ở chuỗi kết nối SPRING_DATASOURCE_URL ban đầu: Tên host của database bị cấu hình sai (để là localhost thay vì phải trỏ vào tên service của container DB là 'mysql_db').
+- Lỗi không đồng bộ thông tin xác thực: Mật khẩu SA_PASSWORD đặt ở container DB và mật khẩu khai báo ở ứng dụng Spring Boot không trùng khớp nhau hoặc vi phạm chính sách bảo mật mật khẩu mạnh (Password Complexity) của Microsoft SQL Server.
+- Lỗi chạy đua thời gian khởi động (Race Condition): Container DB khởi động chậm hơn Web App. Dù có 'depends_on', nhưng khi Web App bật lên kết nối ngay thì SQL Server bên trong container DB vẫn đang thiết lập môi trường nội bộ, chưa sẵn sàng mở cổng kết nối, dẫn đến lỗi 'Connection reset' hoặc 'Connection refused'.
+4. 5 lỗi kỹ thuật em có thể gặp khi Docker hóa source code này là gì?
+- Lỗi 1 (Cấu trúc HĐH khác biệt): Lệnh tạo DB trong file SQL đính kèm đường dẫn cứng của Windows (ổ C:\...) khi chạy trên SQL Server chạy nền Linux (Docker) sẽ bị sập hệ thống (Error 5133) do Linux không nhận diện cấu trúc ổ đĩa Windows.
+- Lỗi 2 (Case-Sensitivity - Phân biệt chữ hoa/thường): Hệ điều hành Linux chạy Docker phân biệt chữ hoa chữ thường nghiêm ngặt. Nếu cấu hình kết nối là 'fastshop' mà file SQL tạo database 'Fastshop' (chữ F viết hoa) sẽ làm ứng dụng sập lỗi 500 do không tìm thấy thực thể.
+- Lỗi 3 (Lỗi phân quyền sở hữu DB): Khi import file SQL cũ từ máy Windows cục bộ, các bảng dữ liệu bị gán quyền sở hữu cứng cho user Windows cũ, dẫn đến việc tài khoản 'sa' của Docker dù kết nối thành công cũng không có quyền đọc/ghi dữ liệu (Cannot find user or permission error).
+- Lỗi 4 (Thiếu tham số mã hóa bảo mật mạng): Trình điều khiển JDBC của Microsoft SQL Server phiên bản mới bắt buộc phải khai báo tham số mã hóa ';encrypt=true;trustServerCertificate=true;' trong chuỗi URL, nếu thiếu ứng dụng sẽ bị từ chối bắt tay (Handshake) bảo mật.
+- Lỗi 5 (Lỗi định dạng khoảng trắng YAML): File docker-compose.yml vô tình bị thừa/thiếu khoảng trắng (tab/space) hoặc sai ký tự dòng, khiến Docker Engine không thể parse dữ liệu và báo lỗi cấu trúc (failed to parse).
+5. Nếu mở rộng tiếp, em sẽ thêm database / nginx / env / volume ra sao?
+- Về Database: Tạo thêm một service Database Read-Replica (bản sao chỉ đọc) để phân tách luồng dữ liệu, giảm tải cho database chính thông qua cơ chế Replication, hoặc thêm Redis làm database bộ nhớ đệm (Caching) tăng tốc độ phản hồi.
+- Về Nginx: Thêm một service 'nginx-router' đứng ở mặt trước làm Reverse Proxy để hứng toàn bộ request từ Port 80/443 của người dùng, thực hiện cân bằng tải (Load Balancing) sang cụm nhiều container web-app chạy song song, đồng thời cấu hình chứng chỉ SSL (HTTPS) bảo mật.
+- Về Env: Tách toàn bộ các thông tin nhạy cảm (Mật khẩu sa, chuỗi kết nối, khóa bí mật) ra một file ẩn tự lập riêng biệt `.env` nằm ngoài source code, sau đó dùng biến gọi dạng `${DB_PASSWORD}` để tăng tính bảo mật bảo mật, dễ dàng thay đổi cấu hình giữa các môi trường Dev/Staging/Production mà không cần sửa file compose gốc.
+- Về Volume: Chuyển đổi từ Volume cục bộ (Local volume) sang các Driver volume dùng chung vùng lưu trữ đám mây (như AWS EFS, GlusterFS hoặc NFS) để khi triển khai hệ thống lớn trên nhiều server vật lý khác nhau (Docker Swarm / Kubernetes), tất cả các node đều có thể truy cập chung một nguồn dữ liệu hình ảnh, tệp tin tải lên.
