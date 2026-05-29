@@ -1,0 +1,40 @@
+services:
+  # --- SERVICE 1: DATABASE ---
+  mysql_db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql-container
+    restart: always
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Nct312007@
+      - TZ=Asia/Ho_Chi_Minh
+    ports:
+      - "1434:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+    networks:
+      - backend-net
+
+  # --- SERVICE 2: APPLICATION ---
+  web-app:
+    build: .
+    container_name: fast-web
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mysql_db
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:sqlserver://mysql_db:1433;databaseName=fastshop_clean;encrypt=true;trustServerCertificate=true;
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=Nct312007@
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=create
+      - TZ=Asia/Ho_Chi_Minh
+    networks:
+      - backend-net
+
+networks:
+  backend-net:
+
+volumes:
+  mssql_data:
